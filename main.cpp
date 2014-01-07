@@ -9,8 +9,6 @@ double dist(Point x,Point y)
 {
 	return (x.x-y.x)*(x.x-y.x)+(x.y-y.y)*(x.y-y.y);
 }
-
-
 //This function returns the radius and the center of the circle given 3 points
 //If a circle cannot be formed , it returns a zero radius circle centered at (0,0)
 pair<Point,double> circleFromPoints(Point p1, Point p2, Point p3)
@@ -33,7 +31,8 @@ pair<Point,double> circleFromPoints(Point p1, Point p2, Point p3)
 //The main function :D
 int main(int argc, char *argv[])
 {
-	string filename = "/Users/new-worker/OpenCVHandGuesture/hand.mov";
+	// string filename = "/Users/new-worker/OpenCVHandGuesture/hand.mov";
+	string filename = "/Users/new-worker/Desktop/hand2.mov";
 	Mat frame;
 	Mat back;
 	Mat fore;
