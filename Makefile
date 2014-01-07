@@ -1,4 +1,4 @@
 all:
 	rm -rf a.out
-	g++  `pkg-config --libs opencv` -lX11  main.cpp 
+	g++  `pkg-config --libs --cflags opencv x11` main.cpp 
 

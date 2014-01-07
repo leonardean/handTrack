@@ -1,7 +1,7 @@
-#include<opencv2/opencv.hpp>
-#include<iostream>
-#include<vector>
-#include<algorithm>
+#include <opencv2/opencv.hpp>
+#include <iostream>
+#include <vector>
+#include <algorithm>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 using namespace std;
@@ -17,9 +17,9 @@ double dist(Point x,Point y)
 //If a circle cannot be formed , it returns a zero radius circle centered at (0,0)
 pair<Point,double> circleFromPoints(Point p1, Point p2, Point p3)
 {
-	double offset = pow(p2.x,2) +pow(p2.y,2);
-	double bc =   ( pow(p1.x,2) + pow(p1.y,2) - offset )/2.0;
-	double cd =   (offset - pow(p3.x, 2) - pow(p3.y, 2))/2.0;
+	double offset = pow((double)(p2.x),2) + pow((double)(p2.y),2);
+	double bc =   ( pow((double)(p1.x),2) + pow((double)(p1.y),2) - offset )/2.0;
+	double cd =   (offset - pow((double)(p3.x), 2) - pow((double)(p3.y), 2))/2.0;
 	double det =  (p1.x - p2.x) * (p2.y - p3.y) - (p2.x - p3.x)* (p1.y - p2.y); 
 	double TOL = 0.0000001;
 	if (abs(det) < TOL) { cout<<"POINTS TOO CLOSE"<<endl;return make_pair(Point(0,0),0); }
@@ -27,7 +27,7 @@ pair<Point,double> circleFromPoints(Point p1, Point p2, Point p3)
 	double idet = 1/det;
 	double centerx =  (bc * (p2.y - p3.y) - cd * (p1.y - p2.y)) * idet;
 	double centery =  (cd * (p1.x - p2.x) - bc * (p2.x - p3.x)) * idet;
-	double radius = sqrt( pow(p2.x - centerx,2) + pow(p2.y-centery,2));
+	double radius = sqrt( pow((double)(p2.x) - centerx,2) + pow((double)(p2.y)-centery,2));
 
 	return make_pair(Point(centerx,centery),radius);
 }
@@ -116,11 +116,12 @@ void mouseTo(int x,int y)
 //The main function :D
 int main(int argc, char *argv[])
 {
+	string filename = "/Users/new-worker/Desktop/hand2.mov";
 	Mat frame;
 	Mat back;
 	Mat fore;
 	vector<pair<Point,double> > palm_centers;
-	VideoCapture cap(0);
+	VideoCapture cap(filename);
 	BackgroundSubtractorMOG2 bg;
 	bg.set("nmixtures",3);
 	bg.set("detectShadows",false);
@@ -128,7 +129,7 @@ int main(int argc, char *argv[])
 
 	namedWindow("Frame");
 	namedWindow("Background");
-	int backgroundFrame=500;
+	int backgroundFrame=400;
 
 
 	for(;;)
@@ -266,13 +267,7 @@ int main(int argc, char *argv[])
 						}
 						
 						no_of_fingers=min(5,no_of_fingers);
-						cout<<"NO OF FINGERS: "<<no_of_fingers<<endl;
-						mouseTo(palm_center.x,palm_center.y);//Move the cursor corresponding to the palm
-						if(no_of_fingers<4)//If no of fingers is <4 , click , else release
-							mouseClick();
-						else
-							mouseRelease();
-						
+						cout<<"NO OF FINGERS: "<<no_of_fingers<<endl;						
 					}
 				}
 
