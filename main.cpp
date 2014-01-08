@@ -31,8 +31,8 @@ pair<Point,double> circleFromPoints(Point p1, Point p2, Point p3)
 //The main function :D
 int main(int argc, char *argv[])
 {
-	// string filename = "/Users/new-worker/OpenCVHandGuesture/hand.mov";
-	string filename = "/Users/new-worker/Desktop/hand2.mov";
+	string filename = "/Users/new-worker/OpenCVHandGuesture/hand.mov";
+//	string filename = "/Users/new-worker/Desktop/hand2.mov";
 	Mat frame;
 	Mat back;
 	Mat fore;
@@ -78,6 +78,7 @@ int main(int argc, char *argv[])
 				//Draw contour
 				vector<vector<Point> > tcontours;
 				tcontours.push_back(contours[i]);
+                //Scalar(B,G,R)
 				drawContours(frame,tcontours,-1,cv::Scalar(0,0,255),2);
 
 				//Detect Hull in current contour
@@ -85,40 +86,66 @@ int main(int argc, char *argv[])
 				vector<vector<int> > hullsI(1);
 				convexHull(Mat(tcontours[0]),hulls[0],false);
 				convexHull(Mat(tcontours[0]),hullsI[0],false);
-				drawContours(frame,hulls,-1,cv::Scalar(0,255,0),2);
+//				drawContours(frame,hulls,-1,cv::Scalar(0,255,0),2);
 
 				//Find minimum area rectangle to enclose hand
 				RotatedRect rect=minAreaRect(Mat(tcontours[0]));
 
 				//Find Convex Defects
 				vector<Vec4i> defects;
+                
 				if(hullsI[0].size()>0)
 				{
+                    //returns the 4 points of rect into rect_points
 					Point2f rect_points[4]; rect.points( rect_points );
-					for( int j = 0; j < 4; j++ )
-						line( frame, rect_points[j], rect_points[(j+1)%4], Scalar(255,0,0), 1, 8 );
+                    //draw outter rectangle
+//					for( int j = 0; j < 4; j++ )
+//						line( frame, rect_points[j], rect_points[(j+1)%4], Scalar(255,0,0), 2, 8 );
+                    
 					Point rough_palm_center;
+                    //convexityDefects(inputcoutour, inputhullindex, outputdefects)
 					convexityDefects(tcontours[0], hullsI[0], defects);
+                    
 					if(defects.size()>=3)
 					{
+                        double max_R = 0;
 						vector<Point> palm_points;
 						for(int j=0;j<defects.size();j++)
 						{
-							int startidx=defects[j][0]; Point ptStart( tcontours[0][startidx] );
-							int endidx=defects[j][1]; Point ptEnd( tcontours[0][endidx] );
-							int faridx=defects[j][2]; Point ptFar( tcontours[0][faridx] );
+							int startidx=defects[j][0];
+                            Point ptStart( tcontours[0][startidx] );
+//                            line( frame, ptStart, ptStart, Scalar(0,0,255), 2, 8 );
+							int endidx=defects[j][1];
+                            Point ptEnd( tcontours[0][endidx] );
+//                            line( frame, ptEnd, ptEnd, Scalar(0,0,255), 4, 8 );
+
+							int faridx=defects[j][2];
+                            Point ptFar( tcontours[0][faridx] );
+//                            line( frame, ptStart, ptFar, Scalar(0,0,255), 2, 8 );
+                            
+                            if (dist(ptStart,ptFar) > max_R) {
+                                max_R += sqrt(dist(ptStart,ptFar));
+                            }
+                            
+                            
 							//Sum up all the hull and defect points to compute average
 							rough_palm_center+=ptFar+ptStart+ptEnd;
 							palm_points.push_back(ptFar);
 							palm_points.push_back(ptStart);
 							palm_points.push_back(ptEnd);
 						}
+                        max_R /= defects.size();
+                        
+                        cout<<"max_R: "<<max_R<<endl;
 
 						//Get palm center by 1st getting the average of all defect points, this is the rough palm center,
 						//Then U chose the closest 3 points ang get the circle radius and center formed from them which is the palm center.
 						rough_palm_center.x/=defects.size()*3;
 						rough_palm_center.y/=defects.size()*3;
+                        
+                        //which to choose
 						Point closest_pt=palm_points[0];
+                        
 						vector<pair<double,int> > distvec;
 						for(int i=0;i<palm_points.size();i++)
 							distvec.push_back(make_pair(dist(rough_palm_center,palm_points[i]),i));
@@ -158,6 +185,8 @@ int main(int argc, char *argv[])
 						circle(frame,palm_center,5,Scalar(144,144,255),3);
 						circle(frame,palm_center,radius,Scalar(144,144,255),2);
 
+                        /**
+                         */
 						//Detect fingers by finding points that form an almost isosceles triangle with certain thesholds
 						int no_of_fingers=0;
 						for(int j=0;j<defects.size();j++)
@@ -172,11 +201,17 @@ int main(int argc, char *argv[])
 
 							double retLength=sqrt(dist(ptEnd,ptFar));
 							//Play with these thresholds to improve performance
-							if(length<=3*radius&&Ydist>=0.4*radius&&length>=10&&retLength>=10&&max(length,retLength)/min(length,retLength)>=0.8)
+							if(length<=3*radius&&
+//                               Ydist>=0.4*radius&&
+                               length>=10&&
+                               retLength>=10&&
+                               max(length,retLength)/min(length,retLength)>=0.8)
 								if(min(Xdist,Ydist)/max(Xdist,Ydist)<=0.8)
 								{
-									if((Xdist>=0.1*radius&&Xdist<=1.3*radius&&Xdist<Ydist)||(Ydist>=0.1*radius&&Ydist<=1.3*radius&&Xdist>Ydist))
-										line( frame, ptEnd, ptFar, Scalar(0,255,0), 1 ),no_of_fingers++;
+									if((Xdist>=0.1*radius&&Xdist<=1.3*radius&&Xdist<Ydist)||(Ydist>=0.1*radius&&Ydist<=1.3*radius&&Xdist>Ydist)){
+//										line( frame, ptEnd, ptFar, Scalar(0,255,0), 2 ),no_of_fingers++;
+//                                        circle(frame,ptEnd,3,Scalar(0,0,255),2);
+                                    }
 								}
 
 
