@@ -71,10 +71,92 @@ int main(int argc, char *argv[])
 
 		//Find the contours in the foreground
 		findContours(fore,contours,CV_RETR_EXTERNAL,CV_CHAIN_APPROX_NONE);
+		int contournum = 0;
 		for(int i=0;i<contours.size();i++)
 			//Ignore all small insignificant areas
-			if(contourArea(contours[i])>=5000)		    
+			if(contourArea(contours[i])>=10000)		    
 			{
+				//find the center of palm my computing moments
+				Moments moment = moments(fore, true);
+				Point center(moment.m10/moment.m00, moment.m01/moment.m00);
+				circle(frame,center,8,Scalar(0,0,255),CV_FILLED);
+
+				//find the finger tips circle
+				vector<Point> couPoint = contours[i];
+				vector<Point> fingerTips;
+				Point p,q,r;
+				int max(0), count(0), notice(0);
+
+				for(int k = 5; (k < (couPoint.size()-5)) && couPoint.size(); k ++)
+				{
+					q = couPoint[i - 5];  
+            		p = couPoint[i];  
+            		r = couPoint[i + 5];  
+            		int dot = (q.x - p.x ) * (r.x - p.x) + (q.y - p.y ) * (r.y - p.y);  
+            		if (dot < 20 && dot > -20)  
+           			{  
+                		int cross = (q.x - p.x ) * (r.y - p.y) - (r.x - p.x ) * (q.y - p.y);  
+                		if (cross > 0)  
+                		{  	
+                			cout<<"finger tip pushed"<<endl;
+                    		fingerTips.push_back(p);  
+                    		circle(frame, p, 5 ,Scalar(255, 0, 0), CV_FILLED);  
+                    		line(frame, center, p, Scalar(255, 0, 0), 2);      
+                		}  
+            		} 
+				}
+
+
+
+				//find the finger tips curvature
+				/*
+				vector<Point> couPoint = contours[i];
+				vector<Point> fingerTips;
+				Point tmp;
+				int max(0), count(0), notice(0);
+				for (int k = 0; k < couPoint.size(); k ++) {
+					tmp = couPoint[k];
+					int dist = (tmp.x - center.x) * (tmp.x - center.x) + (tmp.y - center.y) * (tmp.y - center.y);
+					if (dist > max) {
+						max = dist;
+						notice = k;
+					}
+
+					if (dist != max) {
+						count ++;
+						if (count > 40) {
+							count = 0;
+							max = 0;
+							bool flag = false;
+							//points lower than the center of hand does not count
+							// if (center.y < couPoint[notice].y)
+							if (center.x < couPoint[notice].x)
+								continue;
+
+							//points too closed to current stored fingerTip does not count
+							for (int j=0; j < fingerTips.size(); j ++) {
+								if (abs(couPoint[notice].x - fingerTips[j].x) < 20) {
+									flag = true;
+									break;
+								}
+							}
+
+							if (flag)
+								continue;
+
+							cout<<"finger tip pushed"<<endl;
+							fingerTips.push_back(couPoint[notice]);
+							circle(frame, couPoint[notice], 6, Scalar(0, 255, 0), CV_FILLED);
+							line(frame, center, couPoint[notice], Scalar(255, 0, 0), 2);
+						}
+					}
+				}*/
+
+
+
+
+
+				contournum ++;
 				//Draw contour
 				vector<vector<Point> > tcontours;
 				tcontours.push_back(contours[i]);
@@ -201,18 +283,18 @@ int main(int argc, char *argv[])
 
 							double retLength=sqrt(dist(ptEnd,ptFar));
 							//Play with these thresholds to improve performance
-							if(length<=3*radius&&
-//                               Ydist>=0.4*radius&&
-                               length>=10&&
-                               retLength>=10&&
-                               max(length,retLength)/min(length,retLength)>=0.8)
-								if(min(Xdist,Ydist)/max(Xdist,Ydist)<=0.8)
-								{
-									if((Xdist>=0.1*radius&&Xdist<=1.3*radius&&Xdist<Ydist)||(Ydist>=0.1*radius&&Ydist<=1.3*radius&&Xdist>Ydist)){
-//										line( frame, ptEnd, ptFar, Scalar(0,255,0), 2 ),no_of_fingers++;
-//                                        circle(frame,ptEnd,3,Scalar(0,0,255),2);
-                                    }
-								}
+// 							if(length<=3*radius&&
+// //                               Ydist>=0.4*radius&&
+//                                length>=10&&
+//                                retLength>=10&&
+//                                max(length,retLength)/min(length,retLength)>=0.8)
+// 								if(min(Xdist,Ydist)/max(Xdist,Ydist)<=0.8)
+// 								{
+// 									if((Xdist>=0.1*radius&&Xdist<=1.3*radius&&Xdist<Ydist)||(Ydist>=0.1*radius&&Ydist<=1.3*radius&&Xdist>Ydist)){
+// //										line( frame, ptEnd, ptFar, Scalar(0,255,0), 2 ),no_of_fingers++;
+// //                                        circle(frame,ptEnd,3,Scalar(0,0,255),2);
+//                                     }
+// 								}
 
 
 						}
@@ -222,12 +304,15 @@ int main(int argc, char *argv[])
 					}
 				}
 
-			}
+			}	
+
 		if(backgroundFrame>0)
 			putText(frame, "Recording Background", cvPoint(30,30), FONT_HERSHEY_COMPLEX_SMALL, 0.8, cvScalar(200,200,250), 1, CV_AA);
 		imshow("Frame",frame);
 		imshow("Background",back);
 		if(waitKey(10) >= 0) break;
+		cout<<"number of contour: "<<contournum<<endl;
+
 	}
 	return 0;
 }
