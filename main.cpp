@@ -81,7 +81,19 @@ int main(int argc, char *argv[])
 				Point center(moment.m10/moment.m00, moment.m01/moment.m00);
 				circle(frame,center,8,Scalar(0,0,255),CV_FILLED);
 
+				double dist_avg = 0;
+				vector<Point> conPoint = contours[i];
+				for(int k=0; k<conPoint.size();k++) {
+					dist_avg += sqrt(dist(conPoint[k], center));
+					
+				}
+				dist_avg /= conPoint.size();
+				dist_avg /=1.5;
+				cout<<dist_avg<<endl;
+
+
 				//find the finger tips circle
+				/*
 				vector<Point> couPoint = contours[i];
 				vector<Point> fingerTips;
 				Point p,q,r;
@@ -104,7 +116,7 @@ int main(int argc, char *argv[])
                     		line(frame, center, p, Scalar(255, 0, 0), 2);      
                 		}  
             		} 
-				}
+				}*/
 
 
 
@@ -264,8 +276,8 @@ int main(int argc, char *argv[])
 
 						//Draw the palm center and the palm circle
 						//The size of the palm gives the depth of the hand
-						circle(frame,palm_center,5,Scalar(144,144,255),3);
-						circle(frame,palm_center,radius,Scalar(144,144,255),2);
+						circle(frame,center,5,Scalar(144,144,255),3);
+						circle(frame,center,dist_avg,Scalar(144,144,255),2);
 
                         /**
                          */
@@ -277,24 +289,24 @@ int main(int argc, char *argv[])
 							int endidx=defects[j][1]; Point ptEnd( tcontours[0][endidx] );
 							int faridx=defects[j][2]; Point ptFar( tcontours[0][faridx] );
 							//X o--------------------------o Y
-							double Xdist=sqrt(dist(palm_center,ptFar));
-							double Ydist=sqrt(dist(palm_center,ptStart));
+							double Xdist=sqrt(dist(center,ptFar));
+							double Ydist=sqrt(dist(center,ptStart));
 							double length=sqrt(dist(ptFar,ptStart));
 
 							double retLength=sqrt(dist(ptEnd,ptFar));
 							//Play with these thresholds to improve performance
-// 							if(length<=3*radius&&
-// //                               Ydist>=0.4*radius&&
-//                                length>=10&&
-//                                retLength>=10&&
-//                                max(length,retLength)/min(length,retLength)>=0.8)
-// 								if(min(Xdist,Ydist)/max(Xdist,Ydist)<=0.8)
-// 								{
-// 									if((Xdist>=0.1*radius&&Xdist<=1.3*radius&&Xdist<Ydist)||(Ydist>=0.1*radius&&Ydist<=1.3*radius&&Xdist>Ydist)){
-// //										line( frame, ptEnd, ptFar, Scalar(0,255,0), 2 ),no_of_fingers++;
-// //                                        circle(frame,ptEnd,3,Scalar(0,0,255),2);
-//                                     }
-// 								}
+							if(length<=3*dist_avg&&
+                              Ydist>=0.4*dist_avg&&
+                               length>=10&&
+                               retLength>=10&&
+                               max(length,retLength)/min(length,retLength)>=0.8)
+								if(min(Xdist,Ydist)/max(Xdist,Ydist)<=0.8)
+								{
+									if((Xdist>=0.1*dist_avg&&Xdist<=1.3*dist_avg&&Xdist<Ydist)||(Ydist>=0.1*dist_avg&&Ydist<=1.3*radius&&Xdist>Ydist)){
+										line( frame, ptEnd, ptFar, Scalar(0,255,0), 2 ),no_of_fingers++;
+//                                        circle(frame,ptEnd,3,Scalar(0,0,255),2);
+                                    }
+								}
 
 
 						}
