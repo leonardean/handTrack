@@ -13,7 +13,7 @@ void skinExtract(const Mat &frame, Mat &skinArea);
 
 int main(int argc, char* argv[])
 {
-	string filename = "/Users/new-worker/OpenCVHandGuesture/hand.mov";
+	string filename = "/Users/leonardo/handTrack/hand3.mp4";
 	Mat frame, skinArea;
 	VideoCapture capture(filename);
 
@@ -56,7 +56,7 @@ int main(int argc, char* argv[])
 			}			
 		}
 
-		//drawContours(frame, contours, index, Scalar(0, 0, 255), 2, 8, hierarchy );
+		drawContours(frame, contours, index, Scalar(0, 0, 255), 2, 8, hierarchy );
 		
 		Moments moment = moments(skinArea, true);
 		Point center(moment.m10/moment.m00, moment.m01/moment.m00);
@@ -67,29 +67,33 @@ int main(int argc, char* argv[])
 		}
 
 		// 寻找指尖
-		cout<<"comes"<<endl;
-		cout<<"num of contours: "<<contours.size()<<endl;;
-		vector<Point> couPoint = contours[index];
-		int max(0), count(0), notice(0);
-		vector<Point> fingerTips;
-		Point p, q, r;
-		for (int i = 5; (i < (couPoint.size() - 5)) && couPoint.size(); i++)
-		{
-			q = couPoint[i - 5];
-			p = couPoint[i];
-			r = couPoint[i + 5];
-			int dot = (q.x - p.x ) * (r.x - p.x) + (q.y - p.y ) * (r.y - p.y);
-			if (dot < 20 && dot > -20)
-			{
-				int cross = (q.x - p.x ) * (r.y - p.y) - (r.x - p.x ) * (q.y - p.y);
-				if (cross > 0)
-				{
-					fingerTips.push_back(p);
-					circle(show_img, p, 5 ,Scalar(255, 0, 0), CV_FILLED);
-					line(show_img, center, p, Scalar(255, 0, 0), 2);	
-				}
-			}
-		}
+		
+		// cout<<"num of contours: "<<contours.size()<<endl;
+		// vector<Point> couPoint = contours[index];
+		// int max(0), count(0), notice(0);
+		// vector<Point> fingerTips;
+		// Point p, q, r;
+
+		// for (int i = 5; i < (couPoint.size() - 5); i++)
+		// {
+			
+		// 	q = couPoint[i - 5];
+		// 	p = couPoint[i];
+		// 	r = couPoint[i + 5];
+		// 	int dot = (q.x - p.x ) * (r.x - p.x) + (q.y - p.y ) * (r.y - p.y);
+		// 	if (dot < 20 && dot > -20)
+		// 	{
+		// 		cout<<"comes"<<endl;
+		// 		int cross = (q.x - p.x ) * (r.y - p.y) - (r.x - p.x ) * (q.y - p.y);
+		// 		if (cross > 0)
+		// 		{
+		// 			fingerTips.push_back(p);
+		// 			circle(show_img, p, 5 ,Scalar(255, 0, 0), CV_FILLED);
+		// 			line(show_img, center, p, Scalar(255, 0, 0), 2);	
+		// 		}
+		// 	}
+		// }
+		// cout<<"comes2"<<endl;
 
 		imshow("show_img", show_img);
 

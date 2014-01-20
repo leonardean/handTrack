@@ -66,7 +66,7 @@ struct ctx {
 
 void init_capture(struct ctx *ctx)
 {
-        char* filename = "/Users/new-worker/OpenCVHandGuesture/hand.mov";
+        char* filename = "/Users/leonardo/handTrack/hand1.mp4";
         ctx->capture = cvCaptureFromFile(filename);//cvCaptureFromCAM(0);
         if (!ctx->capture) {
                 fprintf(stderr, "Error initializing capture\n");

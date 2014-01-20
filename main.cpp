@@ -31,11 +31,12 @@ pair<Point,double> circleFromPoints(Point p1, Point p2, Point p3)
 //The main function :D
 int main(int argc, char *argv[])
 {
-	string filename = "/Users/new-worker/OpenCVHandGuesture/hand.mov";
+	string filename = "/Users/leonardo/handTrack/hand1.mp4";
 //	string filename = "/Users/new-worker/Desktop/hand2.mov";
 	Mat frame;
 	Mat back;
 	Mat fore;
+	Mat prevFrame;
 	vector<pair<Point,double> > palm_centers;
 	VideoCapture cap(filename);
 	BackgroundSubtractorMOG2 bg;
@@ -65,8 +66,9 @@ int main(int argc, char *argv[])
 
 
 		//Enhance edges in the foreground by applying erosion and dilation
-		erode(fore,fore,Mat());
-		dilate(fore,fore,Mat());
+		erode(fore,fore,Mat(), Point(-1, -1), 2);
+		dilate(fore,fore,Mat(), Point(-1, -1));
+		medianBlur(fore, fore, 5);
 
 
 		//Find the contours in the foreground
@@ -180,7 +182,7 @@ int main(int argc, char *argv[])
 				vector<vector<int> > hullsI(1);
 				convexHull(Mat(tcontours[0]),hulls[0],false);
 				convexHull(Mat(tcontours[0]),hullsI[0],false);
-//				drawContours(frame,hulls,-1,cv::Scalar(0,255,0),2);
+				drawContours(frame,hulls,-1,cv::Scalar(0,255,0),2);
 
 				//Find minimum area rectangle to enclose hand
 				RotatedRect rect=minAreaRect(Mat(tcontours[0]));
@@ -193,8 +195,8 @@ int main(int argc, char *argv[])
                     //returns the 4 points of rect into rect_points
 					Point2f rect_points[4]; rect.points( rect_points );
                     //draw outter rectangle
-//					for( int j = 0; j < 4; j++ )
-//						line( frame, rect_points[j], rect_points[(j+1)%4], Scalar(255,0,0), 2, 8 );
+					// for( int j = 0; j < 4; j++ )
+					// 	line( frame, rect_points[j], rect_points[(j+1)%4], Scalar(255,0,0), 2, 8 );
                     
 					Point rough_palm_center;
                     //convexityDefects(inputcoutour, inputhullindex, outputdefects)
