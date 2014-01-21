@@ -28,15 +28,96 @@ pair<Point,double> circleFromPoints(Point p1, Point p2, Point p3)
 	return make_pair(Point(centerx,centery),radius);
 }
 
+void improvecontrast(Mat &Ana)
+{
+	// for color image
+
+	double alpha = 0.2; // contrast control
+	int beta = 100; // lightness control
+	                                                                                           
+	Mat new_image = Mat::zeros( Ana.size(), Ana.type());
+
+	//do the operation new(i, j) = alpha * image(i,j) + beta
+	for (int y = 0; y < Ana.rows; y ++)
+	{
+		for (int x = 0; x < Ana.cols; x ++)
+		{
+			for (int c = 0; c< 3; c++)
+			{
+				new_image.at<Vec3b>( y, x)[c] = saturate_cast<uchar>( alpha * (Ana.at<Vec3b>(y, x)[c]) + beta);
+			}
+		}
+	}
+	Ana = new_image;
+}
+
+Mat getRed(Mat &srcBGR)
+{
+  cv::Mat imR(srcBGR.rows, srcBGR.cols, CV_8UC1);
+  cv::Mat imG(srcBGR.rows, srcBGR.cols, CV_8UC1);
+  cv::Mat imB(srcBGR.rows, srcBGR.cols, CV_8UC1);
+  cv::Mat imRboost(srcBGR.rows, srcBGR.cols, CV_8UC1);
+
+  Mat out[] = {imR, imG, imB};
+  int from_to[] = {2,0  , 1, 1,  0, 2 };
+  cv::mixChannels(&srcBGR, 1, out, 3, from_to, 3);
+
+  cv::bitwise_not(imG, imG);
+  cv::bitwise_not(imB, imB);
+
+  cv::multiply(imR, imG, imRboost, (double)1/255);
+  cv::multiply(imRboost, imB, imRboost, (double)1/255);
+
+  return imRboost;
+
+  // cv::imwrite("RGB.bmp", srcBGR);
+  // cv::imwrite("R.bmp", imR);
+  // cv::imwrite("Ronly.bmp", imRonly);
+}
+
+void skinExtract(const Mat &frame, Mat &skinArea)
+{
+	int avg_cb = 120;//YCbCr顏色空間膚色cb的平均值
+	int avg_cr = 155;//YCbCr顏色空間膚色cr的平均值
+	int SkinRange = 20;//YCbCr顏色空間膚色的範圍
+	Mat YCbCr;
+	vector<Mat> planes;
+
+	//转换为YCrCb颜色空间
+	cvtColor(frame, YCbCr, CV_RGB2YCrCb);
+	//将多通道图像分离为多个单通道图像
+	split(YCbCr, planes); 
+
+	//运用迭代器访问矩阵元素
+	MatIterator_<uchar> it_Cb = planes[1].begin<uchar>(),
+						it_Cb_end = planes[1].end<uchar>();
+	MatIterator_<uchar> it_Cr = planes[2].begin<uchar>();
+	MatIterator_<uchar> it_skin = skinArea.begin<uchar>();
+
+	//人的皮肤颜色在YCbCr色度空间的分布范围:100<=Cb<=127, 138<=Cr<=170
+	for( ; it_Cb != it_Cb_end; ++it_Cr, ++it_Cb, ++it_skin)
+	{
+		if (avg_cr-SkinRange <= *it_Cr &&  *it_Cr <= avg_cr+SkinRange && avg_cb-SkinRange <= *it_Cb &&  *it_Cb <= avg_cb+SkinRange)
+			*it_skin = 255;
+		else
+			*it_skin = 0;
+	}
+
+	//膨胀和腐蚀，膨胀可以填补凹洞（将裂缝桥接），腐蚀可以消除细的凸起（“斑点”噪声）
+	dilate(skinArea, skinArea, Mat(5, 5, CV_8UC1), Point(-1, -1));
+
+	erode(skinArea, skinArea, Mat(5, 5, CV_8UC1), Point(-1, -1));
+	medianBlur(skinArea, skinArea, 5);
+}
+
 //The main function :D
 int main(int argc, char *argv[])
 {
-	string filename = "/Users/leonardo/handTrack/hand1.mp4";
+	string filename = "/Users/leonardo/Desktop/hand_sh.mp4";
 //	string filename = "/Users/new-worker/Desktop/hand2.mov";
 	Mat frame;
 	Mat back;
 	Mat fore;
-	Mat prevFrame;
 	vector<pair<Point,double> > palm_centers;
 	VideoCapture cap(filename);
 	BackgroundSubtractorMOG2 bg;
@@ -46,14 +127,21 @@ int main(int argc, char *argv[])
 
 	namedWindow("Frame");
 	namedWindow("Background");
-	int backgroundFrame=400;
+	int backgroundFrame=500;
+	int frame_count = 0;
 
 
 	for(;;)
 	{
+		// cout<<"frame count: "<<frame_count<<endl;
+		// frame_count ++;
 		vector<vector<Point> > contours;
 		//Get the frame
 		cap >> frame;
+
+		// improvecontrast(frame);
+		// frame = getRed(frame_clone);
+
 
 		//Update the current background model and get the foreground
 		if(backgroundFrame>0)
@@ -64,12 +152,10 @@ int main(int argc, char *argv[])
 		//Get background image to display it
 		bg.getBackgroundImage(back);
 
-
 		//Enhance edges in the foreground by applying erosion and dilation
-		erode(fore,fore,Mat(), Point(-1, -1), 2);
 		dilate(fore,fore,Mat(), Point(-1, -1));
+		erode(fore,fore,Mat(), Point(-1, -1), 2);		
 		medianBlur(fore, fore, 5);
-
 
 		//Find the contours in the foreground
 		findContours(fore,contours,CV_RETR_EXTERNAL,CV_CHAIN_APPROX_NONE);
@@ -178,145 +264,145 @@ int main(int argc, char *argv[])
 				drawContours(frame,tcontours,-1,cv::Scalar(0,0,255),2);
 
 				//Detect Hull in current contour
-				vector<vector<Point> > hulls(1);
-				vector<vector<int> > hullsI(1);
-				convexHull(Mat(tcontours[0]),hulls[0],false);
-				convexHull(Mat(tcontours[0]),hullsI[0],false);
-				drawContours(frame,hulls,-1,cv::Scalar(0,255,0),2);
+// 				vector<vector<Point> > hulls(1);
+// 				vector<vector<int> > hullsI(1);
+// 				convexHull(Mat(tcontours[0]),hulls[0],false);
+// 				convexHull(Mat(tcontours[0]),hullsI[0],false);
+// 				drawContours(frame,hulls,-1,cv::Scalar(0,255,0),2);
 
-				//Find minimum area rectangle to enclose hand
-				RotatedRect rect=minAreaRect(Mat(tcontours[0]));
+// 				//Find minimum area rectangle to enclose hand
+// 				RotatedRect rect=minAreaRect(Mat(tcontours[0]));
 
-				//Find Convex Defects
-				vector<Vec4i> defects;
+// 				//Find Convex Defects
+// 				vector<Vec4i> defects;
                 
-				if(hullsI[0].size()>0)
-				{
-                    //returns the 4 points of rect into rect_points
-					Point2f rect_points[4]; rect.points( rect_points );
-                    //draw outter rectangle
-					// for( int j = 0; j < 4; j++ )
-					// 	line( frame, rect_points[j], rect_points[(j+1)%4], Scalar(255,0,0), 2, 8 );
+// 				if(hullsI[0].size()>0)
+// 				{
+//                     //returns the 4 points of rect into rect_points
+// 					Point2f rect_points[4]; rect.points( rect_points );
+//                     //draw outter rectangle
+// 					// for( int j = 0; j < 4; j++ )
+// 					// 	line( frame, rect_points[j], rect_points[(j+1)%4], Scalar(255,0,0), 2, 8 );
                     
-					Point rough_palm_center;
-                    //convexityDefects(inputcoutour, inputhullindex, outputdefects)
-					convexityDefects(tcontours[0], hullsI[0], defects);
+// 					Point rough_palm_center;
+//                     //convexityDefects(inputcoutour, inputhullindex, outputdefects)
+// 					convexityDefects(tcontours[0], hullsI[0], defects);
                     
-					if(defects.size()>=3)
-					{
-                        double max_R = 0;
-						vector<Point> palm_points;
-						for(int j=0;j<defects.size();j++)
-						{
-							int startidx=defects[j][0];
-                            Point ptStart( tcontours[0][startidx] );
-//                            line( frame, ptStart, ptStart, Scalar(0,0,255), 2, 8 );
-							int endidx=defects[j][1];
-                            Point ptEnd( tcontours[0][endidx] );
-//                            line( frame, ptEnd, ptEnd, Scalar(0,0,255), 4, 8 );
+// 					if(defects.size()>=3)
+// 					{
+//                         double max_R = 0;
+// 						vector<Point> palm_points;
+// 						for(int j=0;j<defects.size();j++)
+// 						{
+// 							int startidx=defects[j][0];
+//                             Point ptStart( tcontours[0][startidx] );
+// //                            line( frame, ptStart, ptStart, Scalar(0,0,255), 2, 8 );
+// 							int endidx=defects[j][1];
+//                             Point ptEnd( tcontours[0][endidx] );
+// //                            line( frame, ptEnd, ptEnd, Scalar(0,0,255), 4, 8 );
 
-							int faridx=defects[j][2];
-                            Point ptFar( tcontours[0][faridx] );
-//                            line( frame, ptStart, ptFar, Scalar(0,0,255), 2, 8 );
+// 							int faridx=defects[j][2];
+//                             Point ptFar( tcontours[0][faridx] );
+// //                            line( frame, ptStart, ptFar, Scalar(0,0,255), 2, 8 );
                             
-                            if (dist(ptStart,ptFar) > max_R) {
-                                max_R += sqrt(dist(ptStart,ptFar));
-                            }
+//                             if (dist(ptStart,ptFar) > max_R) {
+//                                 max_R += sqrt(dist(ptStart,ptFar));
+//                             }
                             
                             
-							//Sum up all the hull and defect points to compute average
-							rough_palm_center+=ptFar+ptStart+ptEnd;
-							palm_points.push_back(ptFar);
-							palm_points.push_back(ptStart);
-							palm_points.push_back(ptEnd);
-						}
-                        max_R /= defects.size();
+// 							//Sum up all the hull and defect points to compute average
+// 							rough_palm_center+=ptFar+ptStart+ptEnd;
+// 							palm_points.push_back(ptFar);
+// 							palm_points.push_back(ptStart);
+// 							palm_points.push_back(ptEnd);
+// 						}
+//                         max_R /= defects.size();
                         
-                        cout<<"max_R: "<<max_R<<endl;
+//                         cout<<"max_R: "<<max_R<<endl;
 
-						//Get palm center by 1st getting the average of all defect points, this is the rough palm center,
-						//Then U chose the closest 3 points ang get the circle radius and center formed from them which is the palm center.
-						rough_palm_center.x/=defects.size()*3;
-						rough_palm_center.y/=defects.size()*3;
+// 						//Get palm center by 1st getting the average of all defect points, this is the rough palm center,
+// 						//Then U chose the closest 3 points ang get the circle radius and center formed from them which is the palm center.
+// 						rough_palm_center.x/=defects.size()*3;
+// 						rough_palm_center.y/=defects.size()*3;
                         
-                        //which to choose
-						Point closest_pt=palm_points[0];
+//                         //which to choose
+// 						Point closest_pt=palm_points[0];
                         
-						vector<pair<double,int> > distvec;
-						for(int i=0;i<palm_points.size();i++)
-							distvec.push_back(make_pair(dist(rough_palm_center,palm_points[i]),i));
-						sort(distvec.begin(),distvec.end());
+// 						vector<pair<double,int> > distvec;
+// 						for(int i=0;i<palm_points.size();i++)
+// 							distvec.push_back(make_pair(dist(rough_palm_center,palm_points[i]),i));
+// 						sort(distvec.begin(),distvec.end());
 
-						//Keep choosing 3 points till you find a circle with a valid radius
-						//As there is a high chance that the closes points might be in a linear line or too close that it forms a very large circle
-						pair<Point,double> soln_circle;
-						for(int i=0;i+2<distvec.size();i++)
-						{
-							Point p1=palm_points[distvec[i+0].second];
-							Point p2=palm_points[distvec[i+1].second];
-							Point p3=palm_points[distvec[i+2].second];
-							soln_circle=circleFromPoints(p1,p2,p3);//Final palm center,radius
-							if(soln_circle.second!=0)
-								break;
-						}
+// 						//Keep choosing 3 points till you find a circle with a valid radius
+// 						//As there is a high chance that the closes points might be in a linear line or too close that it forms a very large circle
+// 						pair<Point,double> soln_circle;
+// 						for(int i=0;i+2<distvec.size();i++)
+// 						{
+// 							Point p1=palm_points[distvec[i+0].second];
+// 							Point p2=palm_points[distvec[i+1].second];
+// 							Point p3=palm_points[distvec[i+2].second];
+// 							soln_circle=circleFromPoints(p1,p2,p3);//Final palm center,radius
+// 							if(soln_circle.second!=0)
+// 								break;
+// 						}
 
-						//Find avg palm centers for the last few frames to stabilize its centers, also find the avg radius
-						palm_centers.push_back(soln_circle);
-						if(palm_centers.size()>10)
-							palm_centers.erase(palm_centers.begin());
+// 						//Find avg palm centers for the last few frames to stabilize its centers, also find the avg radius
+// 						palm_centers.push_back(soln_circle);
+// 						if(palm_centers.size()>10)
+// 							palm_centers.erase(palm_centers.begin());
 						
-						Point palm_center;
-						double radius=0;
-						for(int i=0;i<palm_centers.size();i++)
-						{
-							palm_center+=palm_centers[i].first;
-							radius+=palm_centers[i].second;
-						}
-						palm_center.x/=palm_centers.size();
-						palm_center.y/=palm_centers.size();
-						radius/=palm_centers.size();
+// 						Point palm_center;
+// 						double radius=0;
+// 						for(int i=0;i<palm_centers.size();i++)
+// 						{
+// 							palm_center+=palm_centers[i].first;
+// 							radius+=palm_centers[i].second;
+// 						}
+// 						palm_center.x/=palm_centers.size();
+// 						palm_center.y/=palm_centers.size();
+// 						radius/=palm_centers.size();
 
-						//Draw the palm center and the palm circle
-						//The size of the palm gives the depth of the hand
-						circle(frame,center,5,Scalar(144,144,255),3);
-						circle(frame,center,dist_avg,Scalar(144,144,255),2);
+// 						//Draw the palm center and the palm circle
+// 						//The size of the palm gives the depth of the hand
+// 						circle(frame,center,5,Scalar(144,144,255),3);
+// 						circle(frame,center,dist_avg,Scalar(144,144,255),2);
 
-                        /**
-                         */
-						//Detect fingers by finding points that form an almost isosceles triangle with certain thesholds
-						int no_of_fingers=0;
-						for(int j=0;j<defects.size();j++)
-						{
-							int startidx=defects[j][0]; Point ptStart( tcontours[0][startidx] );
-							int endidx=defects[j][1]; Point ptEnd( tcontours[0][endidx] );
-							int faridx=defects[j][2]; Point ptFar( tcontours[0][faridx] );
-							//X o--------------------------o Y
-							double Xdist=sqrt(dist(center,ptFar));
-							double Ydist=sqrt(dist(center,ptStart));
-							double length=sqrt(dist(ptFar,ptStart));
+//                         /**
+//                          */
+// 						//Detect fingers by finding points that form an almost isosceles triangle with certain thesholds
+// 						int no_of_fingers=0;
+// 						for(int j=0;j<defects.size();j++)
+// 						{
+// 							int startidx=defects[j][0]; Point ptStart( tcontours[0][startidx] );
+// 							int endidx=defects[j][1]; Point ptEnd( tcontours[0][endidx] );
+// 							int faridx=defects[j][2]; Point ptFar( tcontours[0][faridx] );
+// 							//X o--------------------------o Y
+// 							double Xdist=sqrt(dist(center,ptFar));
+// 							double Ydist=sqrt(dist(center,ptStart));
+// 							double length=sqrt(dist(ptFar,ptStart));
 
-							double retLength=sqrt(dist(ptEnd,ptFar));
-							//Play with these thresholds to improve performance
-							if(length<=3*dist_avg&&
-                              Ydist>=0.4*dist_avg&&
-                               length>=10&&
-                               retLength>=10&&
-                               max(length,retLength)/min(length,retLength)>=0.8)
-								if(min(Xdist,Ydist)/max(Xdist,Ydist)<=0.8)
-								{
-									if((Xdist>=0.1*dist_avg&&Xdist<=1.3*dist_avg&&Xdist<Ydist)||(Ydist>=0.1*dist_avg&&Ydist<=1.3*radius&&Xdist>Ydist)){
-										line( frame, ptEnd, ptFar, Scalar(0,255,0), 2 ),no_of_fingers++;
-//                                        circle(frame,ptEnd,3,Scalar(0,0,255),2);
-                                    }
-								}
+// 							double retLength=sqrt(dist(ptEnd,ptFar));
+// 							//Play with these thresholds to improve performance
+// 							if(length<=3*dist_avg&&
+//                               Ydist>=0.4*dist_avg&&
+//                                length>=10&&
+//                                retLength>=10&&
+//                                max(length,retLength)/min(length,retLength)>=0.8)
+// 								if(min(Xdist,Ydist)/max(Xdist,Ydist)<=0.8)
+// 								{
+// 									if((Xdist>=0.1*dist_avg&&Xdist<=1.3*dist_avg&&Xdist<Ydist)||(Ydist>=0.1*dist_avg&&Ydist<=1.3*radius&&Xdist>Ydist)){
+// 										line( frame, ptEnd, ptFar, Scalar(0,255,0), 2 ),no_of_fingers++;
+// //                                        circle(frame,ptEnd,3,Scalar(0,0,255),2);
+//                                     }
+// 								}
 
 
-						}
+// 						}
 						
-						no_of_fingers=min(5,no_of_fingers);
-						cout<<"NO OF FINGERS: "<<no_of_fingers<<endl;						
-					}
-				}
+// 						no_of_fingers=min(5,no_of_fingers);
+// 						cout<<"NO OF FINGERS: "<<no_of_fingers<<endl;						
+// 					}
+// 				}
 
 			}	
 

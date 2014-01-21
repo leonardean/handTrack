@@ -5,6 +5,8 @@
 // Email  : zouxy09@qq.com
 
 #include "opencv2/opencv.hpp"
+#include "stdio.h"
+#include "stdlib.h"
 
 using namespace cv;
 using namespace std;
@@ -17,7 +19,7 @@ bool R3(float H, float S, float V);
 
 int main(int argc, char* argv[])
 {	
-	string filename = "/Users/leonardo/handTrack/hand3.mp4";
+	string filename = "/Users/leonardo/Desktop/hand_free.mp4";
 	Mat frame, skinArea;
 	VideoCapture capture(filename);
 
@@ -59,104 +61,121 @@ int main(int argc, char* argv[])
 		}
 
 		vector<vector<Point> > tcontours;
-		if(contourArea(contours[index])>=10000){
+		if(contourArea(contours[index])>=5000){
 			tcontours.push_back(contours[index]);
+			drawContours(frame,tcontours,-1,cv::Scalar(0,0,255),2);
 			drawContours(show_img,tcontours,-1,cv::Scalar(0,0,255),2);
 		}
 
-
-		// drawContours(frame, contours, index, Scalar(0, 0, 255), 2, 8, hierarchy );
-		// drawContours(show_img,contours,-1,cv::Scalar(0,0,255),2);
 		Moments moment = moments(skinArea, true);
 		Point center(moment.m10/moment.m00, moment.m01/moment.m00);
 		if(contourArea(contours[index])>=10000){			
-			center.y = frame.rows - 1;
+			// center.y = frame.rows - 1;
 			circle(show_img, center, 8 ,Scalar(0, 0, 255), CV_FILLED);
 		}
-
-		// cout<<"contours size: "<<contours.size()<<endl;
-		// cout<<"index: "<<index<<endl;
 		
 		// 寻找指尖
-		vector<Point> couPoint = contours[index];
 
-		vector<Point> fingerTips;
-		Point tmp;
-
-		int max(0), count(0), notice(0);
-		for (int i = 0; i < couPoint.size(); i++)
-		{
-
-			tmp = couPoint[i];
-			//calculate distance of current point to center
-			int dist = (tmp.x - center.x) * (tmp.x - center.x) + (tmp.y - center.y) * (tmp.y - center.y);
-			if (dist > max)
-			{
-				max = dist;
-				notice = i;
-			}
-
-			// 计算最大值保持的点数，如果大于40（这个值需要设置，本来想根据max值来设置，
-			// 但是不成功，不知道为何），那么就认为这个是指尖
-			if (dist != max)
-			{
-				count++;
-				if (count > 80)
-				{
-					count = 0;
-					max = 0;
-					bool flag = false;
-					// 低于手心的点不算
-					if (center.y < couPoint[notice].y )
-						continue;
-					// 离得太近的不算
-					for (int j = 0; j < fingerTips.size(); j++)
-					{
-						if (abs(couPoint[notice].x - fingerTips[j].x) < 40)
-						{
-							flag = true;
-							break;
-						}
-					}
-					if (flag) continue;
-					fingerTips.push_back(couPoint[notice]);
-					circle(show_img, couPoint[notice], 6 ,Scalar(0, 255, 0), CV_FILLED);
-					line(show_img, center, couPoint[notice], Scalar(255, 0, 0), 2);				
-				}
-			}
-		}
-
-		//finger tracking 2
 		// vector<Point> couPoint = contours[index];
-		// 		vector<Point> fingerTips;
-		// 		Point p,q,r;
-		// 		int max(0), count(0), notice(0);
 
-		// 		for(int k = 5; (k < (couPoint.size()-5)) && couPoint.size(); k ++)
+		// vector<Point> fingerTips;
+		// Point tmp;
+
+		// int max(0), count(0), notice(0);
+		// cout<<"couPoint size: "<<couPoint.size()<<endl;
+		// for (int i = 0; i < couPoint.size(); i++)
+		// {
+		// 	tmp = couPoint[i];
+		// 	//calculate distance of current point to center
+		// 	int dist = (tmp.x - center.x) * (tmp.x - center.x) + (tmp.y - center.y) * (tmp.y - center.y);
+
+		// 	if (dist > max)
+		// 	{
+		// 		max = dist;
+		// 		notice = i;
+		// 	}
+
+		// 	// 计算最大值保持的点数，如果大于40（这个值需要设置，本来想根据max值来设置，
+		// 	// 但是不成功，不知道为何），那么就认为这个是指尖
+		// 	if (dist != max)
+		// 	{				
+		// 		count++;
+		// 		if (count > 25)
 		// 		{
-		// 			q = couPoint[index - 5];  
-  //           		p = couPoint[index];  
-  //           		r = couPoint[index + 5];  
-  //           		int dot = (q.x - p.x ) * (r.x - p.x) + (q.y - p.y ) * (r.y - p.y);  
-  //           		if (dot < 20 && dot > -20)  
-  //          			{  
-  //               		int cross = (q.x - p.x ) * (r.y - p.y) - (r.x - p.x ) * (q.y - p.y);  
-  //               		if (cross > 0)  
-  //               		{  	
-  //               			cout<<"finger tip pushed"<<endl;
-  //                   		fingerTips.push_back(p);  
-  //                   		circle(frame, p, 5 ,Scalar(255, 0, 0), CV_FILLED);  
-  //                   		line(frame, center, p, Scalar(255, 0, 0), 2);      
-  //               		}  
-  //           		} 
+		// 			// cout<<"max: "<<max<<endl;
+		// 			count = 0;
+		// 			max = 0;
+		// 			bool flag = false;
+		// 			// 低于手心的点不算
+		// 			if (center.y < couPoint[notice].y )
+		// 				continue;
+		// 			// 离得太近的不算
+		// 			for (int j = 0; j < fingerTips.size(); j++)
+		// 			{
+		// 				if (abs(couPoint[notice].x - fingerTips[j].x) < 20)
+		// 				{
+		// 					flag = true;
+		// 					break;
+		// 				}
+		// 			}
+		// 			if (flag) continue;
+		// 			fingerTips.push_back(couPoint[notice]);
+		// 			double posi = (double)notice/(double)(couPoint.size());
+		// 			cout<<"index position: "<<posi<<endl;
+		// 			circle(show_img, couPoint[notice], 6 ,Scalar(0, 255, 0), CV_FILLED);
+					
+		// 			string s = to_string(fingerTips.size());
+		// 			putText(show_img, s, couPoint[notice], CV_FONT_HERSHEY_COMPLEX,0.7,Scalar(0,255,0));
+		// 			circle(frame, couPoint[notice], 6 ,Scalar(0, 255, 0), CV_FILLED);
+		// 			line(show_img, center, couPoint[notice], Scalar(255, 0, 0), 2);				
 		// 		}
+		// 	}
+		// }
 
+		//寻找指尖 over
+
+		int thr_k = 3;
+		int thr_theta = 10;
+		vector<Point> couPoint = contours[index];  
+		cout<<"couPoint size: "<<couPoint.size()<<endl;
+        int max(0), count(0), notice(0);  
+        vector<Point> fingerTips;  
+        Point p, q, r;  
+        for (int i = thr_k; (i < (couPoint.size() - thr_k)) && couPoint.size(); i++)  
+        {  
+        	bool flag = false;
+        	if (center.y < couPoint[i].y )
+				continue;
+			// for (int j = 0; j < fingerTips.size(); j++)
+			// {
+			// 	if (abs(couPoint[i].x - fingerTips[j].x) < 20)
+			// 	{
+			// 		flag = true;
+			// 		break;
+			// 	}
+			// }
+			// if (flag) continue;
+            q = couPoint[i - thr_k];  
+            p = couPoint[i];  
+            r = couPoint[i + thr_k];  
+            int dot = (q.x - p.x ) * (r.x - p.x) + (q.y - p.y ) * (r.y - p.y);  
+            if (dot < thr_theta && dot > -thr_theta)  
+            {  
+                int cross = (q.x - p.x ) * (r.y - p.y) - (r.x - p.x ) * (q.y - p.y);  
+                if (cross > 0)  
+                {  
+                    fingerTips.push_back(p);  
+                    circle(show_img, p, 5 ,Scalar(255, 0, 0), CV_FILLED);  
+                    // line(show_img, center, p, Scalar(255, 0, 0), 2);      
+                }  
+            }  
+        }  
 
 		imshow("show_img", show_img);
+		// imshow("frame", frame);
 
 		if ( cvWaitKey(20) == 'q' )
 			break;
-
 	}
 
 	return 0;
@@ -254,7 +273,7 @@ void skinExtract(const Mat &frame, Mat &skinArea)
 {
 	int avg_cb = 120;//YCbCr顏色空間膚色cb的平均值
 	int avg_cr = 155;//YCbCr顏色空間膚色cr的平均值
-	int SkinRange = 22;//YCbCr顏色空間膚色的範圍
+	int SkinRange = 20;//YCbCr顏色空間膚色的範圍
 	Mat YCbCr;
 	vector<Mat> planes;
 
@@ -279,8 +298,7 @@ void skinExtract(const Mat &frame, Mat &skinArea)
 	}
 
 	//膨胀和腐蚀，膨胀可以填补凹洞（将裂缝桥接），腐蚀可以消除细的凸起（“斑点”噪声）
-	dilate(skinArea, skinArea, Mat(5, 5, CV_8UC1), Point(-1, -1), 6);
-
-	erode(skinArea, skinArea, Mat(5, 5, CV_8UC1), Point(-1, -1));
+	dilate(skinArea, skinArea, Mat(5, 5, CV_8UC1), Point(-1, -1));
+	erode(skinArea, skinArea, Mat(5, 5, CV_8UC1), Point(-1, -1), 2);
 	medianBlur(skinArea, skinArea, 5);
 }
