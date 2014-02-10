@@ -1,100 +1,418 @@
-#include <opencv2/opencv.hpp>
-#include <iostream>
-#include <vector>
-#include <algorithm>
-using namespace std;
+#include "opencv2/opencv.hpp"
+#include "stdio.h"
+#include "stdlib.h"
+#include "math.h"
+#include "iostream"
+#include <sstream>
+#include <string>
+#include <tesseract/baseapi.h>
+#include <tesseract/strngs.h>
+
 using namespace cv;
-//This function returns the square of the euclidean distance between 2 points.
-double dist(Point x,Point y)
-{
-	return (x.x-y.x)*(x.x-y.x)+(x.y-y.y)*(x.y-y.y);
+using namespace std;
+
+//hand extract based on skin color in YCbCr color space
+void skinExtract(const Mat &frame, Mat &skinArea);
+//hand extract based on skin color in multiple color space
+Mat GetSkin(Mat const &src);
+//threshold of color in RGB color space
+bool R1(int R, int G, int B);
+//threshold of color in YCbCr color space
+bool R2(float Y, float Cr, float Cb);
+//threshold of color in HSV color space
+bool R3(float H, float S, float V);
+//calculate distance of two points
+double calcDist(Point p1, Point p2);
+//find finger tips
+vector<Point> findFingers(vector<vector<Point> > contours, int index, Point center);
+//analyse password
+void passwordAnalysis(Mat frame, Mat skinArea, VideoCapture capture);
+//used for point ordering
+bool toLeft(Point i, Point j);
+//whether a finger presses a key
+void press_listener(vector<vector<Point> > fingerTrace, Mat& frame);
+//calculate angle of three points
+static double angle(Point pt1, Point pt2, Point pt0);
+//improve color contrast of an image
+void improvecontrast(Mat& im);
+//set image into 2 colors
+void black_areadetection(Mat& im, int threshold);
+//display text at contour center
+void setLabel(Mat& im, const string label, vector<Point>& contour);
+//label character 
+int Labeling(Mat& dst, int flag);
+//label on contours
+void Label_map(Mat& out, vector<Point>& contour,Mat& im, int label);
+//output characters
+void Key_express(Point pt, Mat& out, Mat& dst, Mat& frame);
+
+#define MAX_STEP 150
+#define BLACK_THR 85
+
+//main function
+int main(int argc, char* argv[])
+{	
+	if (argc != 2){
+		cout<<"Missing input file."<<endl;
+		exit(-1);
+	}
+	//input video sequence file
+	string filename = argv[1];
+	//Mat to store images, frame for current frame, skinArea for extracted hand
+	Mat frame, skinArea;
+	//video capture for video sequence
+	VideoCapture capture(filename);
+	//loop through video to analyse password
+	passwordAnalysis(frame, skinArea, capture);
+	
+	return 0;
 }
-//This function returns the radius and the center of the circle given 3 points
-//If a circle cannot be formed , it returns a zero radius circle centered at (0,0)
-pair<Point,double> circleFromPoints(Point p1, Point p2, Point p3)
-{
-	double offset = pow((double)(p2.x),2) + pow((double)(p2.y),2);
-	double bc =   ( pow((double)(p1.x),2) + pow((double)(p1.y),2) - offset )/2.0;
-	double cd =   (offset - pow((double)(p3.x), 2) - pow((double)(p3.y), 2))/2.0;
-	double det =  (p1.x - p2.x) * (p2.y - p3.y) - (p2.x - p3.x)* (p1.y - p2.y); 
-	double TOL = 0.0000001;
-	if (abs(det) < TOL) { cout<<"POINTS TOO CLOSE"<<endl;return make_pair(Point(0,0),0); }
-
-	double idet = 1/det;
-	double centerx =  (bc * (p2.y - p3.y) - cd * (p1.y - p2.y)) * idet;
-	double centery =  (cd * (p1.x - p2.x) - bc * (p2.x - p3.x)) * idet;
-	double radius = sqrt( pow((double)(p2.x) - centerx,2) + pow((double)(p2.y)-centery,2));
-
-	return make_pair(Point(centerx,centery),radius);
-}
-
-void improvecontrast(Mat &Ana)
-{
-	// for color image
-
-	double alpha = 0.2; // contrast control
-	int beta = 100; // lightness control
-	                                                                                           
-	Mat new_image = Mat::zeros( Ana.size(), Ana.type());
-
-	//do the operation new(i, j) = alpha * image(i,j) + beta
-	for (int y = 0; y < Ana.rows; y ++)
+vector<int> pressTrace;
+Mat out;
+Mat dst;
+//password analysis
+void passwordAnalysis(Mat frame, Mat skinArea, VideoCapture capture){
+	//store finger trace locally
+	vector<vector<Point> > fingerTrace(5);
+	
+	//frame counter
+	int frame_num = 0;
+	while (1)
 	{
-		for (int x = 0; x < Ana.cols; x ++)
-		{
-			for (int c = 0; c< 3; c++)
+		//assign the current frame
+		capture >> frame;
+		if (frame.empty())
+			break;
+		if (frame_num ==0){
+			Mat gray;
+			cvtColor(frame, gray, CV_BGR2GRAY);
+			black_areadetection(gray, BLACK_THR);
+			
+			int size[] = {gray.rows-1, gray.cols-1};
+			out.create(2, size, CV_8U);
+			out = Scalar(0);
+			Mat bw;
+			Canny(gray, bw, 0, 50, 5);
+			vector<vector<Point> > contours;
+			vector<vector<Point> > tcontours;
+			findContours(bw.clone(), contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+
+			vector<Point> approx;
+			dst = frame.clone();
+			double max_area = 0;
+			int max_idx = 0;
+
+			int count = 0; 
+			for (int i = 0; i < contours.size(); i++)
 			{
-				new_image.at<Vec3b>( y, x)[c] = saturate_cast<uchar>( alpha * (Ana.at<Vec3b>(y, x)[c]) + beta);
+				// Approximate contour with accuracy proportional
+				// to the contour perimeter
+				approxPolyDP(Mat(contours[i]), approx, arcLength(Mat(contours[i]), true)*0.02, true);
+
+				// Skip small or non-convex objects 
+				if (fabs(contourArea(contours[i])) < 100 || !isContourConvex(approx))
+					continue;
+				else if (approx.size() == 4)
+				{
+					// Number of vertices of polygonal curve
+					int vtc = approx.size();
+
+					// Get the cosines of all corners
+					vector<double> cos;
+					for (int j = 2; j < vtc+1; j++)
+						cos.push_back(angle(approx[j%vtc], approx[j-2], approx[j-1]));
+
+					// Sort ascending the cosine values
+					sort(cos.begin(), cos.end());
+
+					// Get the lowest and the highest cosine
+					double mincos = cos.front();
+					double maxcos = cos.back();
+
+					// Use the degrees obtained above and the number of vertices
+					// to determine the shape of the contour
+					if (vtc == 4 && mincos >= -0.1 && maxcos <= 0.3) {			
+						double area = contourArea(contours[i]);
+						max_idx  = area > max_area ? i : max_idx;
+						max_area = area > max_area ? area : max_area;
+						//for rectangles only
+						tcontours.push_back(contours[i]);
+						count ++;
+						Label_map(out, contours[i], gray, count);
+						// drawContours(dst,tcontours,-1,Scalar(0,0,255),2);
+					}
+				}		
 			}
+			imshow("gray", gray);
+		}		
+
+		frame_num ++;
+		//create Mat of the same size in single channel
+		skinArea.create(frame.rows, frame.cols, CV_8UC1);
+		//get extracted hand
+		skinExtract(frame, skinArea);
+		//imshow("skin", skinArea);
+
+		//make a copy of the skin area image
+		Mat show_img;
+		frame.copyTo(show_img, skinArea);
+
+		//list of contours
+		vector<vector<Point> > contours;
+		vector<Vec4i> hierarchy;
+
+		//obtain a list of contours
+		findContours(skinArea, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE);
+
+		//if no contours found, skip this frame
+		if (contours.size() == 0) {
+			continue;
+		}		
+		
+		int index;
+		double area;
+		for (int i=0; i < contours.size(); i++)
+		{
+			area = contourArea(Mat(contours[i]));
+			//find big enough contours 
+			if (area > 10000)
+			{				
+				index = i;
+
+				//draw hand contour in red
+				vector<vector<Point> > tcontours;
+				tcontours.push_back(contours[index]);
+				drawContours(frame,tcontours,-1,cv::Scalar(0,0,255),2);
+				drawContours(show_img,tcontours,-1,cv::Scalar(0,0,255),2);				
+
+				//calculate center of hand and draw circle
+				Moments moment = moments(skinArea, true);
+				Point center(moment.m10/moment.m00, moment.m01/moment.m00);
+				if(contourArea(contours[index])>=10000){			
+					center.y += frame.rows/5;
+					circle(show_img, center, 8 ,Scalar(0, 0, 255), CV_FILLED);
+				}
+
+				// find fingertips
+				vector<Point> fingerTips = findFingers(contours, index, center);
+
+				//store fingers locally
+				if (fingerTips.size()== 5) {
+					//sort finger tips 
+					sort(fingerTips.begin(), fingerTips.end(), toLeft);
+					//draw fingers
+					for (int i = 0; i < 5; i ++) {
+						fingerTrace[i].push_back(fingerTips[i]);
+						if (fingerTrace[i].size() > 15) {
+							press_listener(fingerTrace, frame);
+						}
+						stringstream ss;
+						ss<<i;
+						putText(show_img, ss.str(), fingerTips[i], CV_FONT_HERSHEY_COMPLEX,0.7,Scalar(0,255,0));
+						circle(show_img, fingerTips[i], 6 ,Scalar(0, 255, 0), CV_FILLED);
+						circle(frame, fingerTips[i], 6 ,Scalar(0, 255, 0), CV_FILLED);
+						line(show_img, center, fingerTips[i], Scalar(255, 0, 0), 2);
+					}	
+					// cout<<fingerTrace.size()<<endl;
+					// cout<<"Point 1: "<<fingerTrace[1][fingerTrace[1].size()-1].x
+					// <<" "<<fingerTrace[1][fingerTrace[1].size()-1].y<<endl;				
+				}
+			}			
+		}		
+
+		imshow("keyboard", show_img);
+		imshow("frame", frame);
+
+		if ( cvWaitKey(20) == 'q' )
+			break;
+	}
+}
+
+//point order
+bool toLeft(Point i, Point j){
+	return (i.x < j.x);
+}
+
+//find finger tips
+vector<Point> findFingers(vector<vector<Point> > contours, int index, Point center){
+	//obtain the contour of hand
+	vector<Point> couPoint = contours[index];
+	//create vector to store finger tips
+	vector<Point> fingerTips;
+	//tmp point
+	Point tmp;
+
+	int max(0), count(0), notice(0);
+	vector<int> notices;
+
+	//loop through hand contour points 
+	for (int i = 0; i < couPoint.size(); i++)
+	{
+		tmp = couPoint[i];
+		//calculate distance of current point to center
+		int dist = (tmp.x - center.x) * (tmp.x - center.x) 
+		+ (tmp.y - center.y) * (tmp.y - center.y);
+		//switch the focus to the current maxmum point
+		if (dist > max)	{
+			max = dist;
+			notice = i;
+		}
+
+		//find local maxima by observing how far a maximum point keeps
+		if (dist != max)
+		{		
+			//skip if tmp point is below hand center
+			if (center.y < tmp.y )					
+				continue;	
+			//add to counter for each forward point that is not greater than
+			//current maximum 							
+			count++;
+
+			//if a maximum point keeps its throne for a threshold,
+			//then it is the local maxima
+			if (count > MAX_STEP)
+			{
+				//flag for skip
+				bool flag = false;
+				//reset counter and max
+				count = 0;
+				max = 0;
+
+				//maximum that is below center is not considered
+				if (center.y < couPoint[notice].y )
+					continue;				
+				
+				//maximum point too closed to the previous is not considered
+				for (int j = 0; j < fingerTips.size(); j++){
+					if (abs(couPoint[notice].x - fingerTips[j].x) < 20){
+						flag = true;
+						break;
+					}
+				}
+				if (flag) continue;
+
+				//if satisfied, store the index
+				notices.push_back(notice);
+				//store finger tip if the local maxima is far away from the last one
+				if ((notices.size() >=2 
+					&&(notices[notices.size()-1] - notices[notices.size() - 2]) > 150)
+					||notices.size()==1){
+					fingerTips.push_back(couPoint[notice]);		
+			}		
 		}
 	}
-	Ana = new_image;
+}
+return fingerTips;
 }
 
-Mat getRed(Mat &srcBGR)
-{
-  cv::Mat imR(srcBGR.rows, srcBGR.cols, CV_8UC1);
-  cv::Mat imG(srcBGR.rows, srcBGR.cols, CV_8UC1);
-  cv::Mat imB(srcBGR.rows, srcBGR.cols, CV_8UC1);
-  cv::Mat imRboost(srcBGR.rows, srcBGR.cols, CV_8UC1);
-
-  Mat out[] = {imR, imG, imB};
-  int from_to[] = {2,0  , 1, 1,  0, 2 };
-  cv::mixChannels(&srcBGR, 1, out, 3, from_to, 3);
-
-  cv::bitwise_not(imG, imG);
-  cv::bitwise_not(imB, imB);
-
-  cv::multiply(imR, imG, imRboost, (double)1/255);
-  cv::multiply(imRboost, imB, imRboost, (double)1/255);
-
-  return imRboost;
-
-  // cv::imwrite("RGB.bmp", srcBGR);
-  // cv::imwrite("R.bmp", imR);
-  // cv::imwrite("Ronly.bmp", imRonly);
+//calculate distance of two points
+double calcDist(Point p1, Point p2) {
+	return sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
 }
 
+//using good threshold for skin-detection 
+Mat GetSkin(Mat const &src) {
+	
+    // allocate the result matrix
+	Mat dst = src.clone();
+	//improvecontrast(dst);
+	Vec3b cwhite = Vec3b::all(255);
+	Vec3b cblack = Vec3b::all(0);
+
+	//Hsv color Space
+	Mat src_ycrcb, src_hsv;
+	cvtColor(src, src_ycrcb, CV_BGR2YCrCb);
+
+	src.convertTo(src_hsv, CV_32FC3);
+	cvtColor(src_hsv, src_hsv, CV_BGR2HSV);
+
+    // Now scale the values between [0,255]:
+	normalize(src_hsv, src_hsv, 0.0, 255.0, NORM_MINMAX, CV_32FC3);
+
+	for(int i = 0; i < src.rows; i++) {
+		for(int j = 0; j < src.cols; j++) {
+
+			Vec3b pix_bgr = src.ptr<Vec3b>(i)[j];
+			int B = pix_bgr.val[0];
+			int G = pix_bgr.val[1];
+			int R = pix_bgr.val[2];
+            // apply rgb rule
+			bool a = R1(R,G,B);
+
+			Vec3b pix_ycrcb = src_ycrcb.ptr<Vec3b>(i)[j];
+			int Y = pix_ycrcb.val[0];
+			int Cr = pix_ycrcb.val[1];
+			int Cb = pix_ycrcb.val[2];
+            // apply ycrcb rule
+			bool b = R2(Y,Cr,Cb);
+
+			Vec3f pix_hsv = src_hsv.ptr<Vec3f>(i)[j];
+			float H = pix_hsv.val[0];
+			float S = pix_hsv.val[1];
+			float V = pix_hsv.val[2];
+            // apply hsv rule
+			bool c = R3(H,S,V);
+
+			if(!(a&&b&&c))
+				dst.ptr<Vec3b>(i)[j] = cblack;
+			else
+				dst.ptr<Vec3b>(i)[j] = cwhite;
+		}
+	}
+
+	cvtColor(dst, dst, CV_BGR2GRAY);
+	threshold(dst, dst, 60, 255, CV_THRESH_BINARY);	
+	morphologyEx(dst, dst, CV_MOP_ERODE, Mat1b(3,3,1), Point(-1, -1), 1);
+	morphologyEx(dst, dst, CV_MOP_OPEN, Mat1b(7,7,1), Point(-1, -1), 1);
+	morphologyEx(dst, dst, CV_MOP_CLOSE, Mat1b(9,9,1), Point(-1, -1), 1);
+	medianBlur(dst, dst, 5);
+	
+	return dst;
+}
+
+bool R1(int R, int G, int B) {
+	bool e1 = (R>130) && (G>60) && (B>40) && ((max(R,max(G,B)) - min(R, min(G,B)))>15) && (abs(R-G)>15) && (R>G) && (R>B);
+	bool e2 = (R>240) && (G>220) && (B>170) && (abs(R-G)<=15) && (R>B) && (G>B);
+	return (e1||e2);
+}
+
+bool R2(float Y, float Cr, float Cb) {
+	int avg_cb = 120;
+	int avg_cr = 155;
+	int SkinRange = 22;
+	bool e3 = Cr <= avg_cr+SkinRange;
+	bool e4 = Cr >= avg_cr-SkinRange;
+	bool e5 = Cb >= avg_cb-SkinRange;
+	bool e6 = Cb <= avg_cb+SkinRange;
+	return e3 && e4 && e5 && e6;
+}
+
+bool R3(float H, float S, float V) {
+	return (H < 35 ) || (H > 180);
+}
+
+//obtain skin area image
 void skinExtract(const Mat &frame, Mat &skinArea)
 {
-	int avg_cb = 120;//YCbCr顏色空間膚色cb的平均值
-	int avg_cr = 155;//YCbCr顏色空間膚色cr的平均值
-	int SkinRange = 20;//YCbCr顏色空間膚色的範圍
+	int avg_cb = 120;//average of Cb
+	int avg_cr = 155;//average of Cr
+	int SkinRange = 18;//color range of skin
+
 	Mat YCbCr;
 	vector<Mat> planes;
 
-	//转换为YCrCb颜色空间
+	//color space conversion
 	cvtColor(frame, YCbCr, CV_RGB2YCrCb);
-	//将多通道图像分离为多个单通道图像
+	//split image into single channels
 	split(YCbCr, planes); 
 
-	//运用迭代器访问矩阵元素
+	//use Mat Iterator to get Cb, Cr
 	MatIterator_<uchar> it_Cb = planes[1].begin<uchar>(),
-						it_Cb_end = planes[1].end<uchar>();
+	it_Cb_end = planes[1].end<uchar>();
 	MatIterator_<uchar> it_Cr = planes[2].begin<uchar>();
 	MatIterator_<uchar> it_skin = skinArea.begin<uchar>();
 
-	//人的皮肤颜色在YCbCr色度空间的分布范围:100<=Cb<=127, 138<=Cr<=170
+	//set pixel color according to whether it is the color of skin
 	for( ; it_Cb != it_Cb_end; ++it_Cr, ++it_Cb, ++it_skin)
 	{
 		if (avg_cr-SkinRange <= *it_Cr &&  *it_Cr <= avg_cr+SkinRange && avg_cb-SkinRange <= *it_Cb &&  *it_Cb <= avg_cb+SkinRange)
@@ -103,316 +421,230 @@ void skinExtract(const Mat &frame, Mat &skinArea)
 			*it_skin = 0;
 	}
 
-	//膨胀和腐蚀，膨胀可以填补凹洞（将裂缝桥接），腐蚀可以消除细的凸起（“斑点”噪声）
-	dilate(skinArea, skinArea, Mat(5, 5, CV_8UC1), Point(-1, -1));
-
+	//noise cancellation by dilation, erosion and blur
 	erode(skinArea, skinArea, Mat(5, 5, CV_8UC1), Point(-1, -1));
+	medianBlur(skinArea, skinArea, 5);
+	dilate(skinArea, skinArea, Mat(5, 5, CV_8UC1), Point(-1, -1));	
 	medianBlur(skinArea, skinArea, 5);
 }
 
-//The main function :D
-int main(int argc, char *argv[])
+//whether a finger presses a key
+void press_listener(vector<vector<Point> > fingerTrace, Mat& frame)
 {
-	string filename = "/Users/leonardo/Desktop/hand_sh.mp4";
-//	string filename = "/Users/new-worker/Desktop/hand2.mov";
-	Mat frame;
-	Mat back;
-	Mat fore;
-	vector<pair<Point,double> > palm_centers;
-	VideoCapture cap(filename);
-	BackgroundSubtractorMOG2 bg;
-	bg.set("nmixtures",3);
-	bg.set("detectShadows",false);
-
-
-	namedWindow("Frame");
-	namedWindow("Background");
-	int backgroundFrame=500;
-	int frame_count = 0;
-
-
-	for(;;)
-	{
-		// cout<<"frame count: "<<frame_count<<endl;
-		// frame_count ++;
-		vector<vector<Point> > contours;
-		//Get the frame
-		cap >> frame;
-
-		// improvecontrast(frame);
-		// frame = getRed(frame_clone);
-
-
-		//Update the current background model and get the foreground
-		if(backgroundFrame>0)
-		{bg.operator ()(frame,fore);backgroundFrame--;}
-		else
-		{bg.operator()(frame,fore,0);}
-
-		//Get background image to display it
-		bg.getBackgroundImage(back);
-
-		//Enhance edges in the foreground by applying erosion and dilation
-		dilate(fore,fore,Mat(), Point(-1, -1));
-		erode(fore,fore,Mat(), Point(-1, -1), 2);		
-		medianBlur(fore, fore, 5);
-
-		//Find the contours in the foreground
-		findContours(fore,contours,CV_RETR_EXTERNAL,CV_CHAIN_APPROX_NONE);
-		int contournum = 0;
-		for(int i=0;i<contours.size();i++)
-			//Ignore all small insignificant areas
-			if(contourArea(contours[i])>=10000)		    
-			{
-				//find the center of palm my computing moments
-				Moments moment = moments(fore, true);
-				Point center(moment.m10/moment.m00, moment.m01/moment.m00);
-				circle(frame,center,8,Scalar(0,0,255),CV_FILLED);
-
-				double dist_avg = 0;
-				vector<Point> conPoint = contours[i];
-				for(int k=0; k<conPoint.size();k++) {
-					dist_avg += sqrt(dist(conPoint[k], center));
-					
+	int frame_range = 15;
+	// Have possibilities that already pressed
+	for (int i = 0; i < fingerTrace.size(); i ++) {
+		if ((fingerTrace[i][fingerTrace[i].size() - 1].y 
+			- fingerTrace[i][fingerTrace[i].size() - 7].y > 0)) {
+			if (fingerTrace[i][fingerTrace[i].size() - 2].y - fingerTrace[i][fingerTrace[i].size() - 2 -frame_range].y > 20) {
+				pressTrace.push_back(i);
+				int traceSize = pressTrace.size();
+				if (traceSize >=5){
+					bool pressed = true;
+					for (int j = traceSize - 1; j >= traceSize - 4; j --){
+						if (pressTrace[j] != pressTrace[j-1])
+							pressed = false;
+					}
+					if (pressed == true){
+						Point pressedKey = fingerTrace[i][fingerTrace[i].size() - 2];
+						Key_express(pressedKey, out, dst, frame);					
+					}
 				}
-				dist_avg /= conPoint.size();
-				dist_avg /=1.5;
-				cout<<dist_avg<<endl;
-
-
-				//find the finger tips circle
-				/*
-				vector<Point> couPoint = contours[i];
-				vector<Point> fingerTips;
-				Point p,q,r;
-				int max(0), count(0), notice(0);
-
-				for(int k = 5; (k < (couPoint.size()-5)) && couPoint.size(); k ++)
-				{
-					q = couPoint[i - 5];  
-            		p = couPoint[i];  
-            		r = couPoint[i + 5];  
-            		int dot = (q.x - p.x ) * (r.x - p.x) + (q.y - p.y ) * (r.y - p.y);  
-            		if (dot < 20 && dot > -20)  
-           			{  
-                		int cross = (q.x - p.x ) * (r.y - p.y) - (r.x - p.x ) * (q.y - p.y);  
-                		if (cross > 0)  
-                		{  	
-                			cout<<"finger tip pushed"<<endl;
-                    		fingerTips.push_back(p);  
-                    		circle(frame, p, 5 ,Scalar(255, 0, 0), CV_FILLED);  
-                    		line(frame, center, p, Scalar(255, 0, 0), 2);      
-                		}  
-            		} 
-				}*/
-
-
-
-				//find the finger tips curvature
-				/*
-				vector<Point> couPoint = contours[i];
-				vector<Point> fingerTips;
-				Point tmp;
-				int max(0), count(0), notice(0);
-				for (int k = 0; k < couPoint.size(); k ++) {
-					tmp = couPoint[k];
-					int dist = (tmp.x - center.x) * (tmp.x - center.x) + (tmp.y - center.y) * (tmp.y - center.y);
-					if (dist > max) {
-						max = dist;
-						notice = k;
-					}
-
-					if (dist != max) {
-						count ++;
-						if (count > 40) {
-							count = 0;
-							max = 0;
-							bool flag = false;
-							//points lower than the center of hand does not count
-							// if (center.y < couPoint[notice].y)
-							if (center.x < couPoint[notice].x)
-								continue;
-
-							//points too closed to current stored fingerTip does not count
-							for (int j=0; j < fingerTips.size(); j ++) {
-								if (abs(couPoint[notice].x - fingerTips[j].x) < 20) {
-									flag = true;
-									break;
-								}
-							}
-
-							if (flag)
-								continue;
-
-							cout<<"finger tip pushed"<<endl;
-							fingerTips.push_back(couPoint[notice]);
-							circle(frame, couPoint[notice], 6, Scalar(0, 255, 0), CV_FILLED);
-							line(frame, center, couPoint[notice], Scalar(255, 0, 0), 2);
-						}
-					}
-				}*/
-
-
-
-
-
-				contournum ++;
-				//Draw contour
-				vector<vector<Point> > tcontours;
-				tcontours.push_back(contours[i]);
-                //Scalar(B,G,R)
-				drawContours(frame,tcontours,-1,cv::Scalar(0,0,255),2);
-
-				//Detect Hull in current contour
-// 				vector<vector<Point> > hulls(1);
-// 				vector<vector<int> > hullsI(1);
-// 				convexHull(Mat(tcontours[0]),hulls[0],false);
-// 				convexHull(Mat(tcontours[0]),hullsI[0],false);
-// 				drawContours(frame,hulls,-1,cv::Scalar(0,255,0),2);
-
-// 				//Find minimum area rectangle to enclose hand
-// 				RotatedRect rect=minAreaRect(Mat(tcontours[0]));
-
-// 				//Find Convex Defects
-// 				vector<Vec4i> defects;
-                
-// 				if(hullsI[0].size()>0)
-// 				{
-//                     //returns the 4 points of rect into rect_points
-// 					Point2f rect_points[4]; rect.points( rect_points );
-//                     //draw outter rectangle
-// 					// for( int j = 0; j < 4; j++ )
-// 					// 	line( frame, rect_points[j], rect_points[(j+1)%4], Scalar(255,0,0), 2, 8 );
-                    
-// 					Point rough_palm_center;
-//                     //convexityDefects(inputcoutour, inputhullindex, outputdefects)
-// 					convexityDefects(tcontours[0], hullsI[0], defects);
-                    
-// 					if(defects.size()>=3)
-// 					{
-//                         double max_R = 0;
-// 						vector<Point> palm_points;
-// 						for(int j=0;j<defects.size();j++)
-// 						{
-// 							int startidx=defects[j][0];
-//                             Point ptStart( tcontours[0][startidx] );
-// //                            line( frame, ptStart, ptStart, Scalar(0,0,255), 2, 8 );
-// 							int endidx=defects[j][1];
-//                             Point ptEnd( tcontours[0][endidx] );
-// //                            line( frame, ptEnd, ptEnd, Scalar(0,0,255), 4, 8 );
-
-// 							int faridx=defects[j][2];
-//                             Point ptFar( tcontours[0][faridx] );
-// //                            line( frame, ptStart, ptFar, Scalar(0,0,255), 2, 8 );
-                            
-//                             if (dist(ptStart,ptFar) > max_R) {
-//                                 max_R += sqrt(dist(ptStart,ptFar));
-//                             }
-                            
-                            
-// 							//Sum up all the hull and defect points to compute average
-// 							rough_palm_center+=ptFar+ptStart+ptEnd;
-// 							palm_points.push_back(ptFar);
-// 							palm_points.push_back(ptStart);
-// 							palm_points.push_back(ptEnd);
-// 						}
-//                         max_R /= defects.size();
-                        
-//                         cout<<"max_R: "<<max_R<<endl;
-
-// 						//Get palm center by 1st getting the average of all defect points, this is the rough palm center,
-// 						//Then U chose the closest 3 points ang get the circle radius and center formed from them which is the palm center.
-// 						rough_palm_center.x/=defects.size()*3;
-// 						rough_palm_center.y/=defects.size()*3;
-                        
-//                         //which to choose
-// 						Point closest_pt=palm_points[0];
-                        
-// 						vector<pair<double,int> > distvec;
-// 						for(int i=0;i<palm_points.size();i++)
-// 							distvec.push_back(make_pair(dist(rough_palm_center,palm_points[i]),i));
-// 						sort(distvec.begin(),distvec.end());
-
-// 						//Keep choosing 3 points till you find a circle with a valid radius
-// 						//As there is a high chance that the closes points might be in a linear line or too close that it forms a very large circle
-// 						pair<Point,double> soln_circle;
-// 						for(int i=0;i+2<distvec.size();i++)
-// 						{
-// 							Point p1=palm_points[distvec[i+0].second];
-// 							Point p2=palm_points[distvec[i+1].second];
-// 							Point p3=palm_points[distvec[i+2].second];
-// 							soln_circle=circleFromPoints(p1,p2,p3);//Final palm center,radius
-// 							if(soln_circle.second!=0)
-// 								break;
-// 						}
-
-// 						//Find avg palm centers for the last few frames to stabilize its centers, also find the avg radius
-// 						palm_centers.push_back(soln_circle);
-// 						if(palm_centers.size()>10)
-// 							palm_centers.erase(palm_centers.begin());
-						
-// 						Point palm_center;
-// 						double radius=0;
-// 						for(int i=0;i<palm_centers.size();i++)
-// 						{
-// 							palm_center+=palm_centers[i].first;
-// 							radius+=palm_centers[i].second;
-// 						}
-// 						palm_center.x/=palm_centers.size();
-// 						palm_center.y/=palm_centers.size();
-// 						radius/=palm_centers.size();
-
-// 						//Draw the palm center and the palm circle
-// 						//The size of the palm gives the depth of the hand
-// 						circle(frame,center,5,Scalar(144,144,255),3);
-// 						circle(frame,center,dist_avg,Scalar(144,144,255),2);
-
-//                         /**
-//                          */
-// 						//Detect fingers by finding points that form an almost isosceles triangle with certain thesholds
-// 						int no_of_fingers=0;
-// 						for(int j=0;j<defects.size();j++)
-// 						{
-// 							int startidx=defects[j][0]; Point ptStart( tcontours[0][startidx] );
-// 							int endidx=defects[j][1]; Point ptEnd( tcontours[0][endidx] );
-// 							int faridx=defects[j][2]; Point ptFar( tcontours[0][faridx] );
-// 							//X o--------------------------o Y
-// 							double Xdist=sqrt(dist(center,ptFar));
-// 							double Ydist=sqrt(dist(center,ptStart));
-// 							double length=sqrt(dist(ptFar,ptStart));
-
-// 							double retLength=sqrt(dist(ptEnd,ptFar));
-// 							//Play with these thresholds to improve performance
-// 							if(length<=3*dist_avg&&
-//                               Ydist>=0.4*dist_avg&&
-//                                length>=10&&
-//                                retLength>=10&&
-//                                max(length,retLength)/min(length,retLength)>=0.8)
-// 								if(min(Xdist,Ydist)/max(Xdist,Ydist)<=0.8)
-// 								{
-// 									if((Xdist>=0.1*dist_avg&&Xdist<=1.3*dist_avg&&Xdist<Ydist)||(Ydist>=0.1*dist_avg&&Ydist<=1.3*radius&&Xdist>Ydist)){
-// 										line( frame, ptEnd, ptFar, Scalar(0,255,0), 2 ),no_of_fingers++;
-// //                                        circle(frame,ptEnd,3,Scalar(0,0,255),2);
-//                                     }
-// 								}
-
-
-// 						}
-						
-// 						no_of_fingers=min(5,no_of_fingers);
-// 						cout<<"NO OF FINGERS: "<<no_of_fingers<<endl;						
-// 					}
-// 				}
-
-			}	
-
-		if(backgroundFrame>0)
-			putText(frame, "Recording Background", cvPoint(30,30), FONT_HERSHEY_COMPLEX_SMALL, 0.8, cvScalar(200,200,250), 1, CV_AA);
-		imshow("Frame",frame);
-		imshow("Background",back);
-		if(waitKey(10) >= 0) break;
-		cout<<"number of contour: "<<contournum<<endl;
-
+			}
+		}
 	}
-	return 0;
 }
+
+static double angle(Point pt1, Point pt2, Point pt0)
+{
+	double dx1 = pt1.x - pt0.x;
+	double dy1 = pt1.y - pt0.y;
+	double dx2 = pt2.x - pt0.x;
+	double dy2 = pt2.y - pt0.y;
+	return (dx1*dx2 + dy1*dy2)/sqrt((dx1*dx1 + dy1*dy1)*(dx2*dx2 + dy2*dy2) + 1e-10);
+}
+
+
+void improvecontrast(Mat& im)
+{
+	// for color image
+
+	double alpha = 5; // contrast control
+	int beta = -5; // lightness control
+
+	Mat new_image = Mat::zeros( im.size(), im.type());
+
+	//do the operation new(i, j) = alpha * image(i,j) + beta
+	for (int y = 0; y < im.rows; y ++)
+	{
+		for (int x = 0; x < im.cols; x ++)
+		{
+			for (int c = 0; c< 3; c++)
+			{
+				new_image.at<Vec3b>( y, x)[c] = saturate_cast<uchar>( alpha * (im.at<Vec3b>(y, x)[c]) + beta);
+			}
+		}
+	}
+	im = new_image;
+}
+
+
+void black_areadetection(Mat& im, int threshold)
+{
+	Mat new_image = im;
+	for (int y = 0; y < im.rows; y ++)
+	{
+		for (int x = 0; x < im.cols; x ++)
+		{
+			int value = (int)new_image.at<uchar> ( y, x);
+			if (value < threshold)
+			{
+				value = 0; 
+			}	
+			else
+			{
+				value = 255;
+			}
+			new_image.at<uchar> ( y, x) = (uchar) value;
+		}
+	}
+	im = new_image;
+
+}
+
+ //Helper function to display text in the center of a contour 
+ void setLabel(Mat& im, const string label, vector<Point>& contour)
+ {
+ 	int fontface = FONT_HERSHEY_SIMPLEX;
+ 	double scale = 0.8;
+ 	int thickness = 2;
+ 	int baseline = 0;
+
+ 	Size text = getTextSize(label, fontface, scale, thickness, &baseline);
+ 	Rect r = boundingRect(contour);
+
+ 	Point px(r.x, r.y);
+ 	Point pt(r.x + ((r.width - text.width) / 2), r.y + ((r.height + text.height) / 2));
+
+
+ 	rectangle(im, pt + Point(0, baseline), pt + Point(text.width, -text.height), CV_RGB(255,255,255), CV_FILLED);
+ 	putText(im, label, pt, fontface, scale, CV_RGB(0,0,0), thickness, 8);
+ }
+
+
+
+ int Labeling(Mat& dst, int flag)
+ {
+ 	tesseract::TessBaseAPI tess;
+ 	tess.Init(NULL, "eng", tesseract::OEM_DEFAULT);
+ 	if (flag == 1) 
+ 	{
+ 		tess.SetVariable("tessedit_char_whitelist", "0123456789");
+ 	}
+ 	else
+ 	{
+ 		tess.SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+ 	}
+ 	tess.SetPageSegMode(tesseract::PSM_SINGLE_CHAR);
+
+ 	Mat clr;
+ 	cvtColor(dst, clr, CV_GRAY2RGB);
+
+ 	Mat gray;
+ 	cvtColor(clr, gray, CV_BGR2GRAY);
+
+ 	// imshow("lalala", dst);
+ 	tess.SetImage((uchar*)gray.data, gray.cols, gray.rows, 1, gray.cols);
+
+ 	char* out = tess.GetUTF8Text();
+
+ 	char character = out[0];
+ 	int label = (int) character;
+
+	//cout<<character<<"*"<<label<<endl;
+ 	return label;	
+ }
+
+ void Label_map(Mat& out, vector<Point>& contour,Mat& im, int label)
+ {
+
+ 	Rect r = boundingRect(contour);
+
+	int flag = 0; // character only
+	int space_key_test = 0;
+	Mat dst = im(Rect(r)).clone();
+
+	int chara_label = 0;
+
+	double scale = 0.8;
+	int table = 3;
+	int max_x = 0.5 * dst.rows - scale * 0.5 * dst.rows;
+	int min_x =  0.5 * dst.rows + scale * 0.5 * dst.rows;
+	int max_y = 0.5 * dst.cols - scale * 0.5 * dst.cols;
+	int min_y =  0.5 * dst.cols + scale * 0.5 * dst.cols;
+	
+	for (int i = 0.5 * dst.rows - scale * 0.5 * dst.rows; i < 0.5 * dst.rows + scale * 0.5 * dst.rows; i ++)
+	{
+		for (int j = 0.5 * dst.cols - scale * 0.5 * dst.cols; j < 0.5 * dst.cols + scale * 0.5 * dst.cols; j ++)
+		{
+			if (dst.at<uchar>(i, j) == (uchar)255)
+			{
+				max_x  = i > max_x ? i : max_x;
+				max_y = j > max_y ? j : max_y;
+				min_x  = i < min_x ? i : min_x;
+				min_y  = j < min_y ? j : min_y;
+				space_key_test++;
+			}
+		}	
+	}	
+
+	if (space_key_test != 0)
+	{
+		
+		if ((max_x - min_x) > 0.4 * dst.rows)
+		{
+			min_x = 0.6 * dst.rows;	
+				flag = 1; // number only		
+				
+			}
+			Mat character = dst(Range(min_x-table, max_x+ table), Range(min_y - table, max_y + table));
+			chara_label = Labeling(character, flag);
+		}
+
+		// nothing has been detected
+		if(chara_label == 32) {chara_label = 0;} 
+
+
+
+		// char to string in order to set label for the keys
+		char chara = (char)chara_label;
+		stringstream trans_s;
+		string s;
+		char c = chara;
+		trans_s << c;
+		trans_s >> s;
+		setLabel(im, s, contour);
+
+		for (int i = r.x+ 1; i < r.x + r.width; i ++){
+			for (int j = r.y + 1; j < r.y + r.height; j ++){
+				out.at<uchar>(j, i) = (uchar) chara_label;
+			}	
+		}		
+	}
+
+	void Key_express(Point pt, Mat& out, Mat& dst, Mat& frame){
+		int fontface = FONT_HERSHEY_SIMPLEX;
+		double scale = 4;
+		int thickness = 2;
+
+		char key_num = (char)out.at<uchar>(pt.y + 8, pt.x);
+		if(key_num == NULL){			
+			key_num = (char)out.at<uchar>(pt.y+8, pt.x+4);
+			if(key_num == NULL){
+				key_num = (char)out.at<uchar>(pt.y+8, pt.x-4);
+			}			
+		}
+		stringstream ss;
+		ss << key_num;
+		putText(frame, ss.str(), pt, fontface, scale, CV_RGB(0,0,255), thickness, 8);
+	}
