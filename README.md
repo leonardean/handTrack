@@ -27,12 +27,14 @@ To compile the code, the following libraries need to be pre-installed:
 * Tesseract-ORC (http://code.google.com/p/tesseract-ocr/)
 
 There is a build executable file that can be used to compile the code by command:
+```
 $ ./build
+```
 in the directory of the code.
 However, whether the build file works depends on the running system. It has been tested on Ubuntu Linux with OpenCV installed in pkg-config. Below is the command for compilation if the build file does not work:
 * In Linux system with OpenCV installed in pkg-config:
 ```
-$ g++ main.cpp -o a.out \`pkg-config --libs opencv\` -I /usr/include/leptonica/ -I /usr/include/tesseract/ -llept -ltesseract
+$ g++ main.cpp -o a.out `pkg-config --libs opencv` -I /usr/include/leptonica/ -I /usr/include/tesseract/ -llept -ltesseract
 ```
 * In Mac OS with OpenCV and Tesseract-ORC Installed via brew (http://brew.sh/), they will both be installed in pkg-config:
 ```
